@@ -1,0 +1,135 @@
+# Prometheus Configuration for Distributed Metrics Collection
+# Collects from 100+ developer laptops in AWS non-production VPN
+
+global:
+  scrape_interval: 30s          # Scrape every 30 seconds
+  evaluation_interval: 30s
+  external_labels:
+    cluster: 'sdlc-quality-gates'
+    environment: 'non-production'
+    prometheus_instance: 'central'
+
+# Retention policy
+# 30 days of data for compliance + trend analysis
+tsdb:
+  retention:
+    size: '200GB'
+    time: '30d'
+
+# Central scrape config for distributed monitoring
+scrape_configs:
+  # Developer environment discovery via file-based service discovery
+  - job_name: 'developer-laptops'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+    # File-based service discovery (targets.json auto-updated)
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets.json'
+        refresh_interval: 5m
+
+    # Relabel configs for organization and filtering
+    relabel_configs:
+      # Extract laptop ID from hostname
+      - source_labels: [__address__]
+        target_label: laptop_id
+        regex: '([a-z0-9-]+)\.(developer\.vpn|internal\.aws)'
+        replacement: '${1}'
+
+      # Set environment label
+      - source_labels: [__address__]
+        target_label: environment
+        replacement: 'developer'
+
+      # Keep only quality-gates metrics
+      - source_labels: [__name__]
+        regex: '(hooks_.*|exceptions_.*|gate_evaluator_.*|security_findings_.*)'
+        action: 'keep'
+
+    # Metric relabeling (optional, for post-scrape processing)
+    metric_relabel_configs:
+      # Add job label to metrics
+      - source_labels: [__name__]
+        target_label: job
+        replacement: 'developer-laptops'
+
+      # Drop high-cardinality metrics if needed
+      - source_labels: [__name__]
+        regex: 'hooks_execution_seconds'
+        action: 'keep'
+
+  # Optional: Per-team scrape configs with separate targets
+  - job_name: 'developer-backend-team'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets-backend.json'
+        refresh_interval: 5m
+
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: team
+        replacement: 'backend'
+
+  # Optional: Per-team frontend
+  - job_name: 'developer-frontend-team'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets-frontend.json'
+        refresh_interval: 5m
+
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: team
+        replacement: 'frontend'
+
+  # Self-monitoring (Prometheus metrics about Prometheus)
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance_type: 'prometheus-central'
+
+# Alert rules for anomaly detection and SLA tracking
+rule_files:
+  - '/etc/prometheus/rules/quality-gates.yml'
+  - '/etc/prometheus/rules/alerts.yml'
+
+# Alertmanager config for notifications
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+      # Uncomment when Alertmanager deployed:
+      # - targets: ['alertmanager:9093']
+
+# Remote write config (optional, for long-term archival)
+# Uncomment to enable write to TimescaleDB, S3, or Grafana Cloud
+# remote_write:
+#   - url: "http://timescaledb:9201/write"
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 200
+#       min_shards: 1
+#       max_samples_per_send: 500
+#       batch_send_wait_time: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms
+#   - url: "https://prometheus-blocks.grafana.net/api/prom/push"
+#     bearer_token: "${GRAFANA_CLOUD_TOKEN}"
+
+# Optional: Remote read for historical data
+# remote_read:
+#   - url: "http://timescaledb:9201/read"

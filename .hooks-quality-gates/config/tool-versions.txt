@@ -1,0 +1,23 @@
+# config/tool-versions.txt
+# Pinned versions for all security scanning tools
+# Format: tool_name: version
+
+# Secrets Detection
+truffleHop: 4.2.0
+
+# Static Application Security Testing
+semgrep: 1.52.0
+
+# Software Composition Analysis
+npm: 10.2.4
+pip: 23.3.1
+cargo: 0.77.0
+composer: 2.6.6
+
+# Infrastructure as Code Scanning
+checkov: 1.2.879
+
+# Optional: Language-specific linters
+eslint: 8.52.0
+shellcheck: 0.9.1
+pylint: 3.0.2

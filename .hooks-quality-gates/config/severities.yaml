@@ -1,0 +1,124 @@
+# config/severities.yaml
+# Severity level mappings for all tools
+
+version: "1.0.0"
+last_updated: "2026-04-12"
+
+# Severity hierarchy: critical > high > medium > low > info
+# CVSS v3.1 mapping where applicable
+
+severities:
+  critical:
+    cvss_score_min: 9.0
+    cvss_score_max: 10.0
+    description: "Exploit is trivial, impact is severe"
+    examples:
+      - "Hardcoded API key in source code"
+      - "SQL injection vulnerability"
+      - "Remote code execution vulnerability"
+      - "Authentication bypass"
+    approval_required: true
+    auto_block: true
+    developer_action: "Fix immediately, do not deploy"
+
+  high:
+    cvss_score_min: 7.0
+    cvss_score_max: 8.9
+    description: "Exploit is easy, or impact is significant"
+    examples:
+      - "Weak cryptography usage"
+      - "Missing access control"
+      - "Cross-site scripting (XSS)"
+      - "Insecure deserialization"
+    approval_required: true
+    auto_block: true
+    developer_action: "Fix before deployment"
+
+  medium:
+    cvss_score_min: 4.0
+    cvss_score_max: 6.9
+    description: "Exploit requires additional steps, or impact is moderate"
+    examples:
+      - "Outdated dependency with known CVE"
+      - "Hardcoded configuration values"
+      - "Weak password policy"
+      - "Insecure logging of sensitive data"
+    approval_required: false
+    auto_block: false
+    developer_action: "Review and plan remediation"
+
+  low:
+    cvss_score_min: 0.1
+    cvss_score_max: 3.9
+    description: "Exploit is difficult, or impact is minimal"
+    examples:
+      - "Code quality issue"
+      - "Minor dependency version outdated"
+      - "Informational security recommendation"
+      - "Best practice violation"
+    approval_required: false
+    auto_block: false
+    developer_action: "Review, fix if time permits"
+
+  info:
+    cvss_score_min: 0.0
+    cvss_score_max: 0.0
+    description: "Informational only, no security risk"
+    examples:
+      - "Deprecated function usage"
+      - "Code style recommendations"
+      - "Documentation improvements"
+    approval_required: false
+    auto_block: false
+    developer_action: "No action required"
+
+# Tool-specific severity mappings
+tool_mappings:
+  truffleHop:
+    entropy_high: "critical"
+    entropy_medium: "high"
+    entropy_low: "medium"
+    pattern_match: "critical"
+
+  semgrep:
+    owasp_top_ten: "high"
+    cwe_critical: "critical"
+    cwe_important: "high"
+    cwe_moderate: "medium"
+    cwe_low: "low"
+
+  npm:
+    critical: "critical"
+    high: "high"
+    moderate: "medium"
+    low: "low"
+
+  pip:
+    critical: "critical"
+    high: "high"
+    medium: "medium"
+    low: "low"
+
+  cargo:
+    unsound: "critical"
+    deny_by_default: "high"
+    deny_by_cargo_script: "high"
+    unknown: "medium"
+
+  checkov:
+    "PASSED": "info"
+    "FAILED": "medium"
+    "SKIPPED": "info"
+    "PARSING_ERROR": "high"
+
+# Consensus severity calculation
+# When multiple tools report findings, determine consensus severity
+consensus_rules:
+  all_critical: "critical"
+  any_critical_and_high: "critical"
+  all_high: "high"
+  any_high_and_medium: "high"
+  all_medium: "medium"
+  any_medium_and_low: "medium"
+  all_low: "low"
+  mixed_low_and_info: "low"

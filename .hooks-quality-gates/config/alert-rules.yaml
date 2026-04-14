@@ -1,0 +1,256 @@
+# Exception Management Alert Rules
+# For use with Grafana, Prometheus, or custom alerting systems
+#
+# Priority levels: CRITICAL, HIGH, MEDIUM, LOW
+# Action: What to do when alert fires
+
+version: 1
+
+alerts:
+  # CRITICAL: SLA violation (approval not granted within SLA)
+  - id: alert-sla-violation
+    name: "SLA Violation: Approval Overdue"
+    description: "Exception approval pending beyond SLA duration"
+    priority: CRITICAL
+    condition: "elapsed_time > sla_duration"
+    threshold: "1 hour overdue"
+    action: "Escalate to approver, page on-call"
+    notification_channels:
+      - slack: "#exception-alerts"
+      - email: "security-oncall@teya.com"
+      - pagerduty: "exception-slas"
+    resolve_on: "Exception approved or SLA extended"
+
+  # CRITICAL: Gate-waived emergency (production incident bypass)
+  - id: alert-gate-waived-active
+    name: "CRITICAL: Gate-Waived Exception Active"
+    description: "Production incident bypass active - requires post-mortem"
+    priority: CRITICAL
+    condition: "gate_waived_exception.status == 'active'"
+    threshold: "Immediate"
+    action: "Schedule post-mortem within 24 hours, monitor deployment"
+    notification_channels:
+      - slack: "#incident-response"
+      - pagerduty: "critical-incidents"
+    resolve_on: "Post-mortem completed, exception expired"
+
+  # HIGH: Renewal deadline approaching (20% time remaining)
+  - id: alert-renewal-approaching
+    name: "HIGH: Exception Renewal Approaching"
+    description: "Exception will expire in 20% of remaining time without renewal"
+    priority: HIGH
+    condition: "days_until_expiry <= (total_duration * 0.2)"
+    threshold: "18 days (for 90-day exception)"
+    action: "Send reminder to exception owner and approver"
+    notification_channels:
+      - slack: "#exceptions-team"
+      - email: "exception-owner@team.com"
+    resolve_on: "Renewed or expired"
+
+  # HIGH: Multiple SLA violations in same day
+  - id: alert-sla-violation-surge
+    name: "HIGH: SLA Violation Surge"
+    description: "More than 3 approvals overdue SLA on same day"
+    priority: HIGH
+    condition: "sla_violations_today > 3"
+    threshold: "3 or more violations"
+    action: "Notify approver team, increase staffing if needed"
+    notification_channels:
+      - slack: "#exception-alerts"
+      - email: "exception-approvers@teya.com"
+    resolve_on: "All violations resolved within SLA"
+
+  # HIGH: Approval denial rate trending high
+  - id: alert-denial-rate-high
+    name: "HIGH: Exception Denial Rate Trending"
+    description: "Denial rate above 30% (previous week average)"
+    priority: HIGH
+    condition: "denial_rate_weekly > 30%"
+    threshold: "30% denial rate"
+    action: "Review denial reasons, improve request quality"
+    notification_channels:
+      - slack: "#governance"
+    resolve_on: "Denial rate drops below 20%"
+
+  # MEDIUM: Renewal request pending (not approved within 2 days)
+  - id: alert-renewal-pending-old
+    name: "MEDIUM: Renewal Request Pending"
+    description: "Renewal request waiting for approval >2 days"
+    priority: MEDIUM
+    condition: "renewal_request.age > 2 days"
+    threshold: "2 days pending"
+    action: "Remind approver to review renewal"
+    notification_channels:
+      - slack: "#exception-approvals"
+    resolve_on: "Renewal approved, denied, or exception expires"
+
+  # MEDIUM: Hook success rate degradation
+  - id: alert-hook-success-rate-low
+    name: "MEDIUM: Hook Success Rate Degrading"
+    description: "Hook execution success rate below 99% (p95)"
+    priority: MEDIUM
+    condition: "hook_success_rate < 99%"
+    threshold: "Success rate <99%"
+    action: "Investigate hook failures, check logs"
+    notification_channels:
+      - slack: "#hooks-support"
+    resolve_on: "Success rate recovers above 99%"
+
+  # MEDIUM: High exception volume for single tool
+  - id: alert-tool-finding-surge
+    name: "MEDIUM: Security Finding Surge"
+    description: "Single tool reporting >2x normal finding volume"
+    priority: MEDIUM
+    condition: "findings[tool].today > findings[tool].avg_daily * 2"
+    threshold: "2x normal daily volume"
+    action: "Investigate root cause (new rule, code issue, or tool misconfiguration)"
+    notification_channels:
+      - slack: "#security-findings"
+    resolve_on: "Finding volume returns to normal"
+
+  # MEDIUM: Exceptions at risk of auto-expiry
+  - id: alert-exceptions-at-risk
+    name: "MEDIUM: Exceptions at Risk"
+    description: "Exceptions will auto-expire in <14 days without renewal"
+    priority: MEDIUM
+    condition: "days_until_expiry < 14 && status == 'active'"
+    threshold: "14 days or less"
+    action: "Notify exception owner to request renewal or accept expiry"
+    notification_channels:
+      - slack: "#exception-renewals"
+      - email: "exception-owner@team.com"
+    resolve_on: "Renewed or expired"
+
+  # LOW: Audit log file size approaching limit
+  - id: alert-audit-log-size
+    name: "LOW: Audit Log Size Growing"
+    description: "Audit log file size >100MB (may need rotation)"
+    priority: LOW
+    condition: "audit_log.size > 100MB"
+    threshold: "100 MB"
+    action: "Rotate audit log, archive for compliance"
+    notification_channels:
+      - slack: "#ops-alerts"
+    resolve_on: "Log rotated and archived"
+
+  # LOW: Metrics collection stale
+  - id: alert-metrics-stale
+    name: "LOW: Metrics Data Stale"
+    description: "Metrics not updated in >1 hour"
+    priority: LOW
+    condition: "metrics.last_update < now() - 1 hour"
+    threshold: "1 hour without update"
+    action: "Check automation service status"
+    notification_channels:
+      - slack: "#monitoring"
+    resolve_on: "Metrics updated successfully"
+
+---
+
+# Alert Rule Groups (for Prometheus alerting)
+
+groups:
+  - name: exception_management
+    interval: 5m
+    rules:
+      # SLA violations
+      - alert: ExceptionSLAViolation
+        expr: |
+          (exception_approval_pending_seconds > exception_sla_seconds{type="finding-disabled"})
+          OR
+          (exception_approval_pending_seconds > exception_sla_seconds{type="check-waived"})
+          OR
+          (exception_approval_pending_seconds > exception_sla_seconds{type="hook-disabled"})
+          OR
+          (exception_approval_pending_seconds > exception_sla_seconds{type="gate-waived"})
+        for: 1h
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Exception {{ $labels.exception_id }} SLA violated"
+          description: "{{ $labels.exception_id }} pending approval for {{ $value | humanizeDuration }} (SLA: {{ $labels.sla }})"
+
+      # High denial rate
+      - alert: ExceptionDenialRateTrending
+        expr: |
+          (exception_denials_weekly / (exception_approvals_weekly + exception_denials_weekly)) > 0.3
+        for: 24h
+        labels:
+          severity: high
+          team: security
+        annotations:
+          summary: "Exception denial rate trending high"
+          description: "30% of exceptions denied in past week"
+
+      # Hook success rate low
+      - alert: HookSuccessRateLow
+        expr: |
+          (hook_success_rate) < 0.99
+        for: 10m
+        labels:
+          severity: medium
+          team: hooks
+        annotations:
+          summary: "Hook success rate below 99%"
+          description: "Hook {{ $labels.hook_name }} success rate: {{ $value | humanizePercentage }}"
+
+      # Exceptions at risk
+      - alert: ExceptionsAtRisk
+        expr: |
+          (exception_expires_timestamp - time()) / 86400 < 14
+          AND on(exception_id) exception_status == "active"
+        for: 1h
+        labels:
+          severity: medium
+          team: security
+        annotations:
+          summary: "Exceptions at risk of auto-expiry"
+          description: "{{ $labels.exception_id }} expires in {{ $value | humanizeDuration }}"
+
+---
+
+# Grafana Alert Conditions (for JSON model)
+
+grafana_alerts:
+  - alert_id: sla_violation
+    conditions:
+      - evaluator:
+          params: [3600]  # 1 hour
+          type: gt
+        operator:
+          type: and
+        query:
+          params: ["exception_approval_pending_seconds"]
+        reducer:
+          params: []
+          type: avg
+        type: query
+    no_data_and_exec_errors_state: Alerting
+    for: 1h
+
+  - alert_id: renewal_approaching
+    conditions:
+      - evaluator:
+          params: [14]  # 14 days
+          type: lt
+        operator:
+          type: and
+        query:
+          params: ["days_until_expiry"]
+        type: query
+    no_data_and_exec_errors_state: Alerting
+    for: 1h
+
+  - alert_id: hook_failure_rate
+    conditions:
+      - evaluator:
+          params: [0.99]  # 99% success
+          type: lt
+        operator:
+          type: and
+        query:
+          params: ["hook_success_rate"]
+        type: query
+    no_data_and_exec_errors_state: NoData
+    for: 10m

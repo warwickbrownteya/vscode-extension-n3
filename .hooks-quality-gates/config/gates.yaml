@@ -1,0 +1,138 @@
+# config/gates.yaml
+# Quality Gates policy rules and approval requirements
+
+version: "1.0.0"
+last_updated: "2026-04-12"
+authority: "warwickbrownteya"
+
+# Policy: Consensus voting requires 2/3 tool agreement
+consensus_threshold: 2
+tools_in_consensus: ["secrets", "sast", "sca", "iac"]
+
+# Gate rules: What severity requires what approval
+gates:
+  - id: "gate-001"
+    name: "Critical Security Finding"
+    description: "2 or more tools report critical severity findings"
+    severity: "critical"
+    consensus_required: true
+    approval_required: true
+    approval_authority: "ciso"
+    auto_block: true
+    exception_types: ["gate-waived"]
+    sla_hours: 1
+    auto_expiry_days: 30
+
+  - id: "gate-002"
+    name: "High Security Finding"
+    description: "2 or more tools report high severity findings"
+    severity: "high"
+    consensus_required: true
+    approval_required: true
+    approval_authority: "security_officer"
+    auto_block: true
+    exception_types: ["check-waived", "finding-disabled"]
+    sla_hours: 2
+    auto_expiry_days: 30
+
+  - id: "gate-003"
+    name: "Medium Security Finding"
+    description: "2 or more tools report medium severity findings"
+    severity: "medium"
+    consensus_required: true
+    approval_required: false
+    approval_authority: "qa_lead"
+    auto_block: false
+    exception_types: ["check-waived", "finding-disabled"]
+    sla_hours: 24
+    auto_expiry_days: 5
+
+  - id: "gate-004"
+    name: "Single Tool Low Severity"
+    description: "Only 1 tool reports low severity finding"
+    severity: "low"
+    consensus_required: false
+    approval_required: false
+    approval_authority: "none"
+    auto_block: false
+    exception_types: ["finding-disabled"]
+    sla_hours: 0
+    auto_expiry_days: 0
+
+# Exception management: Auto-expiry and SLA rules
+exceptions:
+  - type: "finding-disabled"
+    authority: "qa_lead"
+    sla_hours: 120  # 5 days
+    auto_expiry_days: 5
+    renewable: true
+    reason: "False positive for known-safe pattern"
+
+  - type: "check-waived"
+    authority: "security_officer"
+    sla_hours: 48   # 2 days
+    auto_expiry_days: 30
+    renewable: false
+    reason: "Tool mismatch (legacy code, specific context)"
+
+  - type: "hook-disabled"
+    authority: "ciso"
+    sla_hours: 24   # 1 day
+    auto_expiry_days: 60
+    renewable: false
+    reason: "Emergency: hook binary broken or unavailable"
+
+  - type: "gate-waived"
+    authority: "ciso"
+    sla_hours: 24   # 1 day
+    auto_expiry_days: 30
+    renewable: false
+    reason: "Emergency: production incident patch"
+
+# Tool configurations
+tools:
+  secrets:
+    enabled: true
+    timeout_sec: 2
+    binary: "truffleHop"
+    framework: "entropy_scanning"
+    rules_file: "config/secrets-rules.txt"
+
+  sast:
+    enabled: true
+    timeout_sec: 2
+    binary: "semgrep"
+    framework: "custom"  # Use centrally-managed rules repository
+    rules_repo: "https://github.com/warwickbrownteya/sdlc-semgrep-rules.git"
+    rules_cache_dir: ".teya/semgrep-cache"
+    rules_cache_ttl_days: 7
+    rules_fallback: "p/owasp-top-ten"  # Fallback if rules repo unavailable
+    rules_branch: "main"
+
+  sca:
+    enabled: true
+    timeout_sec: 1
+    binaries: ["npm", "pip", "cargo", "composer"]
+    frameworks: ["npm-audit", "pip-check", "cargo-audit", "composer-audit"]
+
+  iac:
+    enabled: true
+    timeout_sec: 3
+    binary: "checkov"
+    frameworks: ["terraform", "cloudformation", "kubernetes", "helm", "bicep"]
+    rules_file: "config/checkov-policy.yaml"
+
+# Metrics and reporting
+metrics:
+  dashboard_url: "https://grafana.internal/d/quality-gates"
+  export_format: "prometheus"
+  retention_days: 90
+  alert_on_adoption_below: 80
+  alert_on_false_positive_above: 15
+
+# Audit trail
+audit:
+  enabled: true
+  retention_days: 365
+  export_to_siem: true
+  siem_endpoint: "https://siem.internal/api/events"
